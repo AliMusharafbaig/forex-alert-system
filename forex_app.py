@@ -7,12 +7,14 @@ FOREX ALERT SYSTEM - ULTIMATE PROFESSIONAL EDITION v7.0
 ✅ Voice welcome message support
 ✅ 5-10 second popup alerts
 ✅ Pakistan timezone support (UTC+5)
+✅ CORS enabled for Render deployment
 
 Version: 7.0 - ENHANCED TRADING EDITION
 Created by: Ali Musharaf
 """
 
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
 import requests
 import json
 import time
@@ -43,6 +45,7 @@ logging.basicConfig(
 )
 
 app = Flask(__name__)
+CORS(app)  # ← CRITICAL: Enable CORS for all routes
 
 # API Configuration
 API_UPDATE_INTERVAL = 480  # 8 minutes = 480 seconds
@@ -86,9 +89,9 @@ class ForexAlert:
     mt5_entry: float = 0.0
     mt5_sl: float = 0.0
     mt5_tp: float = 0.0
-    ctrader_entry_pips: float = 0.0  # Entry in decimals (same as MT5)
-    ctrader_sl_pips: int = 0  # Pippettes
-    ctrader_tp_pips: int = 0  # Pippettes
+    ctrader_entry_pips: float = 0.0
+    ctrader_sl_pips: int = 0
+    ctrader_tp_pips: int = 0
     sound_frequency: int = 1500
     sound_duration: int = 800
     triggered: bool = False
@@ -101,15 +104,12 @@ class ForexAlert:
         if not self.created_at:
             self.created_at = get_pkt_now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Auto-detect direction
         if self.baseline_price > 0 and self.direction == "":
             if self.target_price > self.baseline_price:
                 self.direction = "up"
             else:
                 self.direction = "down"
         
-        # Calculate Risk:Reward Ratio
-        # CORRECT: Target is Entry, Risk = |Entry - SL|, Reward = |TP - Entry|
         if self.target_price > 0 and self.stop_loss > 0 and self.take_profit > 0:
             risk = abs(self.target_price - self.stop_loss)
             reward = abs(self.take_profit - self.target_price)
@@ -119,55 +119,21 @@ class ForexAlert:
             else:
                 self.risk_reward_ratio = "N/A"
         
-        # Set MT5 values - TARGET IS THE ENTRY PRICE
-        self.mt5_entry = self.target_price  # FIXED: Target is the actual entry
+        self.mt5_entry = self.target_price
         self.mt5_sl = self.stop_loss
         self.mt5_tp = self.take_profit
         
-        # Calculate cTrader VALUES
-        # Entry: Same as MT5 entry (in decimals)
-        # SL/TP: PIPPETTES from entry (e.g., 25.8 pips = 258 pippettes)
-        self.ctrader_entry_pips = self.target_price  # Same as MT5 entry in decimals
+        self.ctrader_entry_pips = self.target_price
         self.ctrader_sl_pips = ForexAlert.calculate_pippettes_from_entry(self.target_price, self.stop_loss, self.pair)
         self.ctrader_tp_pips = ForexAlert.calculate_pippettes_from_entry(self.target_price, self.take_profit, self.pair)
     
     @staticmethod
-    def price_to_pippettes(price, pair):
-        """Convert price to cTrader pippettes (e.g., 1.09500 -> 109500)"""
-        if price == 0:
-            return 0
-        
-        if 'JPY' in pair:
-            # JPY pairs: 3 decimals -> multiply by 1000
-            # e.g., 157.500 -> 157500
-            return int(round(price * 1000))
-        else:
-            # Other pairs: 5 decimals -> multiply by 100000
-            # e.g., 1.09500 -> 109500
-            return int(round(price * 100000))
-    
-    @staticmethod
     def calculate_pippettes_from_entry(entry_price, target_price, pair):
-        """
-        Calculate PIPPETTES from entry for cTrader broker
-        
-        Examples:
-        - TradingView: 25.8 pips SL → cTrader: 258 pippettes
-        - TradingView: 78.8 pips TP → cTrader: 788 pippettes
-        
-        This is what you type in cTrader broker!
-        """
         diff = abs(target_price - entry_price)
         
         if 'JPY' in pair:
-            # JPY pairs: 1 pip = 0.01, 1 pippette = 0.001
-            # Multiply by 1000 to get pippettes
-            # Example: 0.258 diff = 258 pippettes
             pippettes = round(diff * 1000)
         else:
-            # Other pairs: 1 pip = 0.0001, 1 pippette = 0.00001
-            # Multiply by 100000 to get pippettes
-            # Example: 0.00258 diff = 258 pippettes
             pippettes = round(diff * 100000)
         
         return pippettes
@@ -268,24 +234,9 @@ Your target price has been reached or crossed!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📈 This is your moment to capitalize on market movements!
-   Stay disciplined, follow your plan, and trade smart.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 Best regards,
 Ali Musharaf
 Creator - Forex Alert System v7.0
-
-💼 Professional Trading Tools | 🚀 Real-Time Alerts
-⏱️ 8-Minute API-Optimized System
-
-P.S. - Remember: Trade wisely, manage your risk, and let your 
-       profits run. This alert is your edge in the market!
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Forex Alert System v7.0 - Enhanced Trading Edition
-Powered by 12data API | Built for Traders, By a Trader
             """
             
             message = MIMEMultipart()
@@ -370,14 +321,12 @@ class ForexPriceMonitor:
         return elapsed >= API_UPDATE_INTERVAL
     
     def get_seconds_until_next_update(self) -> int:
-        """Get seconds until the EARLIEST next update - BULLETPROOF - NEVER FREEZES"""
         if not self.last_api_call:
             return 0
         
         now = get_pkt_now()
         next_updates = []
         
-        # CRITICAL FIX: Only check active alerts to prevent freeze
         active_pairs = set()
         for alert in self.alerts:
             if not alert.triggered:
@@ -389,7 +338,6 @@ class ForexPriceMonitor:
                 next_update_time = last_call + timedelta(seconds=API_UPDATE_INTERVAL)
                 seconds_until = (next_update_time - now).total_seconds()
                 
-                # CRITICAL: Ensure non-negative values
                 if seconds_until < 0:
                     seconds_until = 0
                 
@@ -402,7 +350,6 @@ class ForexPriceMonitor:
         return 0
     
     def update_all_prices(self):
-        """Core update function - ONE BY ONE with INSTANT triggering"""
         active_alerts = [a for a in self.alerts if not a.triggered]
         if not active_alerts:
             return
@@ -492,13 +439,6 @@ class ForexPriceMonitor:
         self.save_alerts()
         
         logging.info(f"✅ Alert added: {alert.pair}")
-        logging.info(f"   Entry: {baseline_price:.5f}")
-        logging.info(f"   Target: {target_price:.5f}")
-        logging.info(f"   Stop Loss: {stop_loss:.5f}")
-        logging.info(f"   Take Profit: {take_profit:.5f}")
-        logging.info(f"   Direction: {alert.direction.upper()}")
-        logging.info(f"   R:R Ratio: {alert.risk_reward_ratio}")
-        logging.info(f"   cTrader Entry: {alert.ctrader_entry_pips} pippettes")
         
         if not self.running and len(self.alerts) > 0:
             self.start_monitoring()
@@ -732,6 +672,17 @@ def configure_email():
 def get_notifications():
     return jsonify(monitor.recent_notifications[:10])
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint for monitoring"""
+    return jsonify({
+        'status': 'healthy',
+        'app': 'Forex Alert System v7.0',
+        'running': monitor.running,
+        'alerts': len(monitor.alerts),
+        'active_alerts': sum(1 for a in monitor.alerts if not a.triggered)
+    })
+
 if __name__ == '__main__':
     os.makedirs('templates', exist_ok=True)
     
@@ -742,21 +693,18 @@ if __name__ == '__main__':
     print("\n" + "="*80)
     print("💱 FOREX ALERT SYSTEM - ENHANCED TRADING EDITION v7.0")
     print("="*80)
-    print("🌐 Open browser: http://localhost:5000")
+    print("🌐 Server starting...")
     print("📧 Email: alimusharaf.baig@gmail.com")
     print("⏱️  API Updates: Every 8 minutes per pair")
     print("📊 API Limit: 800 calls/day (12data)")
     print("⚡ INSTANT triggering - ONE BY ONE updates")
-    print("✅ NEW: SL/TP with MT5 & cTrader support")
-    print("✅ NEW: Auto Risk:Reward calculation")
-    print("✅ NEW: Voice welcome message")
-    print("✅ NEW: 5-10 second popup alerts")
+    print("✅ NEW: CORS enabled for Render deployment")
+    print("✅ NEW: Works on both localhost & Render")
     print("🕐 Timezone: Pakistan Time (PKT - UTC+5)")
-    print("🔄 API Reset: Midnight PKT (00:00 Pakistan Time)")
     print("="*80 + "\n")
-    print("✅ API Key: b13108325be841eeb15c911c2f57fad7")
     print("✅ Created by: Ali Musharaf")
     print("="*80 + "\n")
     
+    # CRITICAL: Read PORT from environment for Render/Cloud deployment
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port, use_reloader=False)
