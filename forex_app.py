@@ -704,7 +704,11 @@ if __name__ == '__main__':
     print("="*80 + "\n")
     print("✅ Created by: Ali Musharaf")
     print("="*80 + "\n")
-    
-    # CRITICAL: Read PORT from environment for Render/Cloud deployment
+
+# CRITICAL: Read PORT from environment for Render/Cloud deployment
     port = int(os.environ.get('PORT', 5000))
+    print(f"🌐 Starting server on http://localhost:{port}")
+    print(f"🌐 Also accessible at: http://127.0.0.1:{port}")
+    print("="*80 + "\n")
+
     app.run(debug=False, host='0.0.0.0', port=port, use_reloader=False)
