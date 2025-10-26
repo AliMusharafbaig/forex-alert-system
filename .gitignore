@@ -1,0 +1,34 @@
+# Forex Alert System - Data Files (DO NOT UPLOAD)
+# These files contain user data and should stay local
+
+# Alert data files
+forex_alerts.json
+email_config.json
+
+# Log files
+forex_alerts.log
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
