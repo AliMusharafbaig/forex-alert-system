@@ -1,13 +1,15 @@
 """
-FOREX ALERT SYSTEM - ULTIMATE PROFESSIONAL EDITION v7.0
+FOREX ALERT SYSTEM - ULTIMATE PROFESSIONAL EDITION v7.1
 =======================================================
-✅ Multi-user email support (everyone gets notifications)
+✅ DUAL API KEY SYSTEM - 1600 calls/day (800+800)
+✅ Automatic instant fallback between API keys
+✅ Reduced update interval: 6 minutes (was 8 minutes)
+✅ Perfect smooth countdown timer
+✅ Multi-user email support
 ✅ No cold starts with health check endpoint
-✅ Localhost and Render files stay separate
-✅ PERFECT countdown timer - NEVER freezes
 ✅ Enhanced with SL/TP, MT5/cTrader sections, R:R ratio
 
-Version: 7.0 - FINAL PERFECT EDITION
+Version: 7.1 - DUAL API ENHANCED EDITION
 Created by: Ali Musharaf
 """
 
@@ -45,9 +47,10 @@ logging.basicConfig(
 app = Flask(__name__)
 CORS(app)
 
-# API Configuration
-API_UPDATE_INTERVAL = 480  # 8 minutes
-TWELVE_DATA_API_KEY = "b13108325be841eeb15c911c2f57fad7"
+# API Configuration - DUAL API SYSTEM
+API_UPDATE_INTERVAL = 360  # 6 minutes (reduced from 8 minutes)
+TWELVE_DATA_API_KEY_PRIMARY = "b13108325be841eeb15c911c2f57fad7"
+TWELVE_DATA_API_KEY_SECONDARY = "804b18fa137d4f03b2db55c353463bcc"
 
 # Pakistan timezone offset (UTC+5)
 PKT_OFFSET = timedelta(hours=5)
@@ -57,11 +60,16 @@ def get_pkt_now():
     utc_now = datetime.now(timezone.utc)
     return utc_now + PKT_OFFSET
 
-def get_pkt_midnight():
-    """Get next midnight in Pakistan timezone"""
+def get_next_5am_pkt():
+    """Get next 5 AM PKT - TwelveData API reset time"""
     pkt_now = get_pkt_now()
-    next_midnight = pkt_now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-    return next_midnight
+    next_5am = pkt_now.replace(hour=5, minute=0, second=0, microsecond=0)
+    
+    # If current time is past 5 AM today, get tomorrow's 5 AM
+    if pkt_now.hour >= 5:
+        next_5am += timedelta(days=1)
+    
+    return next_5am
 
 # Supported Forex Pairs
 FOREX_PAIRS = {
@@ -139,7 +147,7 @@ class ForexAlert:
 class EmailNotifier:
     """IMPROVED: Supports multiple email addresses"""
     def __init__(self):
-        self.email_list: List[Dict[str, str]] = []  # List of {email, password, name}
+        self.email_list: List[Dict[str, str]] = []
         self.enabled = False
         self.load_config()
     
@@ -168,17 +176,14 @@ class EmailNotifier:
     
     def add_email(self, sender_email: str, sender_password: str, name: str = ""):
         """Add a new email to the notification list"""
-        # Check if email already exists
         for email_config in self.email_list:
             if email_config['email'] == sender_email:
-                # Update existing
                 email_config['password'] = sender_password
                 email_config['name'] = name
                 self.save_config()
                 logging.info(f"✅ Updated email: {sender_email}")
                 return True
         
-        # Add new email
         self.email_list.append({
             'email': sender_email,
             'password': sender_password,
@@ -241,7 +246,7 @@ Time Triggered:    {get_pkt_now().strftime("%Y-%m-%d %H:%M:%S")} PKT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Best regards,
-Forex Alert System v7.0
+Forex Alert System v7.1 - DUAL API EDITION
 Created by Ali Musharaf
                 """
                 
@@ -274,17 +279,162 @@ class ForexPriceMonitor:
         self.load_alerts()
         self.recent_notifications = []
         self.last_api_call: Dict[str, datetime] = {}
-        self.api_calls_today = 0
-        self.api_calls_reset_time = get_pkt_midnight()
+        
+        # DUAL API SYSTEM
+        self.api_calls_primary = 0
+        self.api_calls_secondary = 0
+        self.current_api_key = TWELVE_DATA_API_KEY_PRIMARY
+        self.using_primary = True
+        
+        self.api_calls_reset_time = get_next_5am_pkt()
         self.is_updating = False
         self.current_update_pair = ""
         
-        logging.info(f"🕐 API calls will reset at midnight PKT: {self.api_calls_reset_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        logging.info(f"🔑 DUAL API SYSTEM INITIALIZED")
+        logging.info(f"   Primary API: {TWELVE_DATA_API_KEY_PRIMARY[:8]}... (800 calls)")
+        logging.info(f"   Secondary API: {TWELVE_DATA_API_KEY_SECONDARY[:8]}... (800 calls)")
+        logging.info(f"   Total Daily Limit: 1600 calls")
+        logging.info(f"⏱️  Update Interval: 6 minutes per pair")
+        logging.info(f"🕐 API calls will reset at 5:00 AM PKT: {self.api_calls_reset_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    def switch_to_secondary_api(self):
+        """Switch to secondary API key"""
+        if not self.using_primary:
+            return False
+        
+        self.using_primary = False
+        self.current_api_key = TWELVE_DATA_API_KEY_SECONDARY
+        logging.info("=" * 80)
+        logging.info("🔄 AUTOMATICALLY SWITCHED TO SECONDARY API KEY")
+        logging.info(f"   Reason: Primary API exhausted or returned error")
+        logging.info(f"   Primary calls made: {self.api_calls_primary}")
+        logging.info(f"   Now using Secondary API: {self.api_calls_secondary}/800")
+        logging.info("=" * 80)
+        return True
+    
+    def reset_to_primary_api(self):
+        """Reset to primary API at 5 AM"""
+        self.using_primary = True
+        self.current_api_key = TWELVE_DATA_API_KEY_PRIMARY
+        self.api_calls_primary = 0
+        self.api_calls_secondary = 0
+        logging.info("=" * 80)
+        logging.info("🌅 5:00 AM PKT - API CREDITS REFRESHED!")
+        logging.info("   ✅ Primary API: Reset to 0/800")
+        logging.info("   ✅ Secondary API: Reset to 0/800")
+        logging.info("   🔑 Now using: PRIMARY API (fresh start)")
+        logging.info("=" * 80)
+    
+    def get_current_api_calls(self):
+        """Get current API call count"""
+        return self.api_calls_primary if self.using_primary else self.api_calls_secondary
+    
+    def get_total_api_calls(self):
+        """Get total API calls used today"""
+        return self.api_calls_primary + self.api_calls_secondary
     
     def get_price_twelvedata(self, pair: str) -> Optional[float]:
         try:
+            # Check if primary API counter reached 800 and switch if needed
+            if self.using_primary and self.api_calls_primary >= 800:
+                logging.warning(f"⚠️ Primary API counter reached {self.api_calls_primary}/800")
+                self.switch_to_secondary_api()
+            
+            # Check if both APIs counter reached limits
+            if self.api_calls_primary >= 800 and self.api_calls_secondary >= 800:
+                logging.error("❌ BOTH API KEYS EXHAUSTED! Waiting for 5:00 AM PKT reset.")
+                return None
+            
             url = f"https://api.twelvedata.com/price"
-            params = {'symbol': pair, 'apikey': TWELVE_DATA_API_KEY}
+            params = {'symbol': pair, 'apikey': self.current_api_key}
+            
+            response = requests.get(url, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # CRITICAL: Check for ANY error response (even without "status": "error")
+                # TwelveData can return errors in multiple formats
+                
+                # Check Method 1: Standard error format
+                if 'status' in data and data['status'] == 'error':
+                    error_msg = data.get('message', '').lower()
+                    
+                    if 'limit' in error_msg or 'quota' in error_msg or 'usage' in error_msg or 'exceeded' in error_msg:
+                        logging.error(f"⚠️ API ERROR (status:error): {data.get('message')}")
+                        if self.using_primary:
+                            logging.warning(f"🚨 PRIMARY API FAILED - SWITCHING NOW!")
+                            self.switch_to_secondary_api()
+                            return self._retry_with_secondary(pair)
+                        else:
+                            logging.error("❌ Secondary API also exhausted. Wait for 5 AM reset.")
+                            return None
+                
+                # Check Method 2: Error code in response (no "status" field)
+                if 'code' in data:
+                    code = data.get('code')
+                    message = data.get('message', '').lower()
+                    
+                    # Common error codes: 429 (rate limit), 403 (forbidden), 401 (unauthorized)
+                    if code in [429, 403, 401] or 'limit' in message or 'quota' in message or 'exceeded' in message:
+                        logging.error(f"⚠️ API ERROR (code {code}): {data.get('message')}")
+                        if self.using_primary:
+                            logging.warning(f"🚨 PRIMARY API FAILED - SWITCHING NOW!")
+                            self.switch_to_secondary_api()
+                            return self._retry_with_secondary(pair)
+                        else:
+                            logging.error("❌ Secondary API also exhausted. Wait for 5 AM reset.")
+                            return None
+                
+                # Check Method 3: No price returned (indication of limit)
+                if 'price' not in data:
+                    logging.warning(f"⚠️ No price in response (possible limit): {data}")
+                    
+                    # If we're using primary and got no price, try secondary
+                    if self.using_primary:
+                        logging.warning(f"🚨 PRIMARY API returned no price - SWITCHING NOW!")
+                        self.switch_to_secondary_api()
+                        return self._retry_with_secondary(pair)
+                    else:
+                        logging.error(f"❌ Secondary API also failed: {data}")
+                        return None
+                
+                # Success - got price
+                if 'price' in data:
+                    price = float(data['price'])
+                    
+                    # Increment the correct counter
+                    if self.using_primary:
+                        self.api_calls_primary += 1
+                        api_status = f"Primary {self.api_calls_primary}/800"
+                    else:
+                        self.api_calls_secondary += 1
+                        api_status = f"Secondary {self.api_calls_secondary}/800"
+                    
+                    total_calls = self.get_total_api_calls()
+                    logging.info(f"✅ {pair} = {price:.5f} | {api_status} | Total: {total_calls}/1600")
+                    return price
+                    
+            else:
+                # HTTP error codes (404, 500, etc.)
+                logging.error(f"⚠️ HTTP {response.status_code}: {response.text}")
+                if self.using_primary and response.status_code in [429, 403, 401]:
+                    logging.warning(f"🚨 PRIMARY API HTTP ERROR - SWITCHING NOW!")
+                    self.switch_to_secondary_api()
+                    return self._retry_with_secondary(pair)
+                return None
+                
+        except Exception as e:
+            logging.error(f"❌ Exception for {pair}: {e}")
+            return None
+        
+        return None
+    
+    def _retry_with_secondary(self, pair: str) -> Optional[float]:
+        """Retry the same request with secondary API"""
+        try:
+            url = f"https://api.twelvedata.com/price"
+            params = {'symbol': pair, 'apikey': self.current_api_key}  # Already switched to secondary
             
             response = requests.get(url, params=params, timeout=10)
             
@@ -292,18 +442,16 @@ class ForexPriceMonitor:
                 data = response.json()
                 if 'price' in data:
                     price = float(data['price'])
-                    self.api_calls_today += 1
-                    logging.info(f"✅ 12data API: {pair} = {price:.5f} (Call #{self.api_calls_today})")
+                    self.api_calls_secondary += 1
+                    logging.info(f"✅ RETRY SUCCESS with Secondary: {pair} = {price:.5f} | Secondary {self.api_calls_secondary}/800")
                     return price
-                else:
-                    logging.error(f"12data API error: {data}")
-            else:
-                logging.error(f"12data API HTTP {response.status_code}")
-                
+            
+            logging.error(f"❌ Secondary API retry failed for {pair}")
+            return None
+            
         except Exception as e:
-            logging.error(f"12data API error for {pair}: {e}")
-        
-        return None
+            logging.error(f"❌ Secondary retry exception: {e}")
+            return None
     
     def fetch_initial_price(self, pair: str) -> Optional[float]:
         logging.info(f"🔍 Fetching initial baseline price for {pair}...")
@@ -499,16 +647,20 @@ class ForexPriceMonitor:
     
     def monitor_prices(self):
         logging.info("▶️ Forex monitoring started")
-        logging.info(f"📊 API Limit: 800 calls/day | Update Interval: 8 minutes")
-        logging.info(f"🕐 Timezone: Pakistan Time (PKT - UTC+5)\n")
+        logging.info(f"📊 DUAL API System: 1600 calls/day (Primary 800 + Secondary 800)")
+        logging.info(f"⏱️  Update Interval: 6 minutes per pair")
+        logging.info(f"🕐 Timezone: Pakistan Time (PKT - UTC+5)")
+        logging.info(f"🌅 API Reset Time: 5:00 AM PKT daily\n")
         
         while self.running:
             try:
                 pkt_now = get_pkt_now()
+                
+                # Check if it's 5 AM PKT - API credits refresh
                 if pkt_now >= self.api_calls_reset_time:
-                    self.api_calls_today = 0
-                    self.api_calls_reset_time = get_pkt_midnight()
-                    logging.info(f"🔄 API counter reset at {pkt_now.strftime('%Y-%m-%d %H:%M:%S')} PKT")
+                    self.reset_to_primary_api()
+                    self.api_calls_reset_time = get_next_5am_pkt()
+                    logging.info(f"🔄 Next reset scheduled: {self.api_calls_reset_time.strftime('%Y-%m-%d %H:%M:%S')} PKT\n")
                 
                 self.update_all_prices()
                 time.sleep(2)
@@ -651,14 +803,24 @@ def get_status():
     
     pkt_now = get_pkt_now()
     
+    # Determine which API is active
+    api_status = "Primary" if monitor.using_primary else "Secondary"
+    primary_calls = monitor.api_calls_primary
+    secondary_calls = monitor.api_calls_secondary
+    total_calls = monitor.get_total_api_calls()
+    
     return jsonify({
         'running': monitor.running,
         'alert_count': len(monitor.alerts),
         'active_alerts': sum(1 for a in monitor.alerts if not a.triggered),
         'email_configured': monitor.email_notifier.enabled,
         'email_count': len(monitor.email_notifier.email_list),
-        'api_calls_today': monitor.api_calls_today,
-        'api_limit': 800,
+        'api_calls_today': total_calls,
+        'api_limit': 1600,
+        'api_calls_primary': primary_calls,
+        'api_calls_secondary': secondary_calls,
+        'api_status': api_status,
+        'using_primary': monitor.using_primary,
         'next_update_seconds': seconds_until_update,
         'next_update_display': f"{minutes}m {seconds}s",
         'is_updating': monitor.is_updating,
@@ -694,10 +856,17 @@ def health_check():
     """Health check endpoint - prevents cold starts when pinged by UptimeRobot"""
     return jsonify({
         'status': 'healthy',
-        'app': 'Forex Alert System v7.0',
+        'app': 'Forex Alert System v7.1 - DUAL API EDITION',
         'running': monitor.running,
         'alerts': len(monitor.alerts),
         'active_alerts': sum(1 for a in monitor.alerts if not a.triggered),
+        'api_system': 'dual',
+        'total_api_limit': 1600,
+        'api_calls_primary': monitor.api_calls_primary,
+        'api_calls_secondary': monitor.api_calls_secondary,
+        'api_calls_total': monitor.get_total_api_calls(),
+        'using_api': 'primary' if monitor.using_primary else 'secondary',
+        'update_interval': '6 minutes',
         'uptime': 'always_on'
     })
 
@@ -709,13 +878,21 @@ if __name__ == '__main__':
         print("✅ Auto-started monitoring")
     
     print("\n" + "="*80)
-    print("💱 FOREX ALERT SYSTEM - FINAL PERFECT EDITION v7.0")
+    print("💱 FOREX ALERT SYSTEM - DUAL API ENHANCED EDITION v7.1")
     print("="*80)
     print("🌐 Server starting...")
+    print("🔑 DUAL API SYSTEM:")
+    print(f"   ├─ Primary API:   {TWELVE_DATA_API_KEY_PRIMARY[:8]}... (800 calls/day)")
+    print(f"   └─ Secondary API: {TWELVE_DATA_API_KEY_SECONDARY[:8]}... (800 calls/day)")
+    print("📊 Total Daily Limit: 1600 API calls")
+    print("⏱️  Update Interval: 6 minutes per pair")
+    print("🌅 API Reset Time: 5:00 AM PKT (TwelveData refresh)")
     print("📧 Multi-email support enabled")
-    print("⏱️  API Updates: Every 8 minutes per pair")
-    print("📊 API Limit: 800 calls/day (12data)")
-    print("⚡ No cold starts with /health endpoint")
+    print("⚡ SMART ERROR-BASED INSTANT FALLBACK")
+    print("   - Detects API errors in real-time")
+    print("   - Switches immediately on quota errors")
+    print("   - No disruption in monitoring")
+    print("🎯 Perfect smooth countdown timer")
     print("🕐 Timezone: Pakistan Time (PKT - UTC+5)")
     print("="*80 + "\n")
     print("✅ Created by: Ali Musharaf")
