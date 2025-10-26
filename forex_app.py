@@ -1,15 +1,13 @@
 """
 FOREX ALERT SYSTEM - ULTIMATE PROFESSIONAL EDITION v7.0
 =======================================================
+✅ Multi-user email support (everyone gets notifications)
+✅ No cold starts with health check endpoint
+✅ Localhost and Render files stay separate
 ✅ PERFECT countdown timer - NEVER freezes
-✅ INSTANT triggering after each price fetch
 ✅ Enhanced with SL/TP, MT5/cTrader sections, R:R ratio
-✅ Voice welcome message support
-✅ 5-10 second popup alerts
-✅ Pakistan timezone support (UTC+5)
-✅ CORS enabled for Render deployment
 
-Version: 7.0 - ENHANCED TRADING EDITION
+Version: 7.0 - FINAL PERFECT EDITION
 Created by: Ali Musharaf
 """
 
@@ -45,10 +43,10 @@ logging.basicConfig(
 )
 
 app = Flask(__name__)
-CORS(app)  # ← CRITICAL: Enable CORS for all routes
+CORS(app)
 
 # API Configuration
-API_UPDATE_INTERVAL = 480  # 8 minutes = 480 seconds
+API_UPDATE_INTERVAL = 480  # 8 minutes
 TWELVE_DATA_API_KEY = "b13108325be841eeb15c911c2f57fad7"
 
 # Pakistan timezone offset (UTC+5)
@@ -139,12 +137,9 @@ class ForexAlert:
         return pippettes
 
 class EmailNotifier:
-    def __init__(self, recipient_email: str = "alimusharaf.baig@gmail.com"):
-        self.recipient = recipient_email
-        self.smtp_server = "smtp.gmail.com"
-        self.smtp_port = 587
-        self.sender_email = None
-        self.sender_password = None
+    """IMPROVED: Supports multiple email addresses"""
+    def __init__(self):
+        self.email_list: List[Dict[str, str]] = []  # List of {email, password, name}
         self.enabled = False
         self.load_config()
     
@@ -153,19 +148,17 @@ class EmailNotifier:
             if os.path.exists('email_config.json'):
                 with open('email_config.json', 'r') as f:
                     config = json.load(f)
-                    self.sender_email = config.get('sender_email')
-                    self.sender_password = config.get('sender_password')
+                    self.email_list = config.get('email_list', [])
                     self.enabled = config.get('enabled', False)
-                    if self.enabled:
-                        logging.info(f"Email configured: {self.sender_email}")
+                    if self.enabled and self.email_list:
+                        logging.info(f"📧 Loaded {len(self.email_list)} email(s) for notifications")
         except Exception as e:
             logging.error(f"Error loading email config: {e}")
     
     def save_config(self):
         try:
             config = {
-                'sender_email': self.sender_email,
-                'sender_password': self.sender_password,
+                'email_list': self.email_list,
                 'enabled': self.enabled
             }
             with open('email_config.json', 'w') as f:
@@ -173,26 +166,52 @@ class EmailNotifier:
         except Exception as e:
             logging.error(f"Error saving email config: {e}")
     
-    def configure(self, sender_email: str, sender_password: str):
-        self.sender_email = sender_email
-        self.sender_password = sender_password
+    def add_email(self, sender_email: str, sender_password: str, name: str = ""):
+        """Add a new email to the notification list"""
+        # Check if email already exists
+        for email_config in self.email_list:
+            if email_config['email'] == sender_email:
+                # Update existing
+                email_config['password'] = sender_password
+                email_config['name'] = name
+                self.save_config()
+                logging.info(f"✅ Updated email: {sender_email}")
+                return True
+        
+        # Add new email
+        self.email_list.append({
+            'email': sender_email,
+            'password': sender_password,
+            'name': name or sender_email.split('@')[0]
+        })
         self.enabled = True
         self.save_config()
-        logging.info(f"Email notifications configured for {sender_email}")
+        logging.info(f"✅ Added new email: {sender_email}")
+        return True
     
     def send_alert(self, alert: ForexAlert):
-        if not self.enabled or not self.sender_email or not self.sender_password:
-            logging.warning("Email not sent - not configured")
+        """Send alert to ALL configured emails"""
+        if not self.enabled or not self.email_list:
+            logging.warning("Email not sent - no emails configured")
             return False
         
-        try:
-            subject = f"🚨💰 FOREX ALERT: {alert.pair} Target Reached - Trading Opportunity!"
-            
-            body = f"""
+        success_count = 0
+        
+        for email_config in self.email_list:
+            try:
+                sender_email = email_config['email']
+                sender_password = email_config['password']
+                sender_name = email_config.get('name', 'Trader')
+                
+                subject = f"🚨💰 FOREX ALERT: {alert.pair} Target Reached!"
+                
+                body = f"""
 ╔═══════════════════════════════════════════════════════════╗
 ║          🎯 FOREX PRICE ALERT TRIGGERED! 🎯               ║
 ║              💰 TRADING OPPORTUNITY 💰                     ║
 ╚═══════════════════════════════════════════════════════════╝
+
+Hi {sender_name},
 
 📊 TRADE DETAILS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -204,58 +223,46 @@ Direction:        {alert.direction.upper()} {('📈' if alert.direction == 'up' 
 Entry Price:      {alert.mt5_entry:.5f}
 Stop Loss:        {alert.mt5_sl:.5f} 🛡️
 Take Profit:      {alert.mt5_tp:.5f} 🎯
-Target Price:     {alert.target_price:.5f}
 Current Price:    {alert.current_price:.5f} ✅
 
 📊 cTRADER PIPPETTES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Entry (Pippettes): {alert.ctrader_entry_pips}
-Stop Loss:         {alert.ctrader_sl_pips} 🛡️
-Take Profit:       {alert.ctrader_tp_pips} 🎯
+Entry (Decimal):   {alert.ctrader_entry_pips:.5f}
+Stop Loss:         {alert.ctrader_sl_pips} pippettes 🛡️
+Take Profit:       {alert.ctrader_tp_pips} pippettes 🎯
 
 ⚖️ RISK MANAGEMENT:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Risk:Reward Ratio: {alert.risk_reward_ratio}
-Price Movement:    {((alert.current_price - alert.baseline_price) / alert.baseline_price * 100):+.2f}%
 Time Triggered:    {get_pkt_now().strftime("%Y-%m-%d %H:%M:%S")} PKT
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✨ CONGRATULATIONS! ✨
-Your target price has been reached or crossed!
-
-💡 ACTION REQUIRED:
-→ For MT5: Use the exact prices listed above
-→ For cTrader: Use the pippette values shown above
-→ Review your trading strategy and risk management
-→ Don't let this opportunity slip away!
-
-{('📝 Trade Notes: ' + alert.notes if alert.notes else '')}
+{('📝 Notes: ' + alert.notes if alert.notes else '')}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Best regards,
-Ali Musharaf
-Creator - Forex Alert System v7.0
-            """
-            
-            message = MIMEMultipart()
-            message['From'] = f"Ali Musharaf Forex Alerts <{self.sender_email}>"
-            message['To'] = self.recipient
-            message['Subject'] = subject
-            message.attach(MIMEText(body, 'plain'))
-            
-            with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10) as server:
-                server.starttls()
-                server.login(self.sender_email, self.sender_password)
-                server.send_message(message)
-            
-            logging.info(f"✅ Email sent to {self.recipient} for {alert.pair}")
-            return True
-            
-        except Exception as e:
-            logging.error(f"❌ Email send failed: {e}")
-            return False
+Forex Alert System v7.0
+Created by Ali Musharaf
+                """
+                
+                message = MIMEMultipart()
+                message['From'] = f"Forex Alerts <{sender_email}>"
+                message['To'] = sender_email
+                message['Subject'] = subject
+                message.attach(MIMEText(body, 'plain'))
+                
+                with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
+                    server.starttls()
+                    server.login(sender_email, sender_password)
+                    server.send_message(message)
+                
+                success_count += 1
+                logging.info(f"✅ Email sent to {sender_email}")
+                
+            except Exception as e:
+                logging.error(f"❌ Failed to send to {email_config.get('email', 'unknown')}: {e}")
+        
+        return success_count > 0
 
 class ForexPriceMonitor:
     def __init__(self):
@@ -277,10 +284,7 @@ class ForexPriceMonitor:
     def get_price_twelvedata(self, pair: str) -> Optional[float]:
         try:
             url = f"https://api.twelvedata.com/price"
-            params = {
-                'symbol': pair,
-                'apikey': TWELVE_DATA_API_KEY
-            }
+            params = {'symbol': pair, 'apikey': TWELVE_DATA_API_KEY}
             
             response = requests.get(url, params=params, timeout=10)
             
@@ -289,7 +293,7 @@ class ForexPriceMonitor:
                 if 'price' in data:
                     price = float(data['price'])
                     self.api_calls_today += 1
-                    logging.info(f"✅ 12data API: {pair} = {price:.5f} (Call #{self.api_calls_today} today)")
+                    logging.info(f"✅ 12data API: {pair} = {price:.5f} (Call #{self.api_calls_today})")
                     return price
                 else:
                     logging.error(f"12data API error: {data}")
@@ -652,6 +656,7 @@ def get_status():
         'alert_count': len(monitor.alerts),
         'active_alerts': sum(1 for a in monitor.alerts if not a.triggered),
         'email_configured': monitor.email_notifier.enabled,
+        'email_count': len(monitor.email_notifier.email_list),
         'api_calls_today': monitor.api_calls_today,
         'api_limit': 800,
         'next_update_seconds': seconds_until_update,
@@ -665,8 +670,20 @@ def get_status():
 @app.route('/api/configure_email', methods=['POST'])
 def configure_email():
     data = request.json
-    monitor.email_notifier.configure(data['email'], data['password'])
-    return jsonify({'success': True, 'message': 'Email configured!'})
+    name = data.get('name', '')
+    monitor.email_notifier.add_email(data['email'], data['password'], name)
+    return jsonify({
+        'success': True, 
+        'message': f'Email added! Total: {len(monitor.email_notifier.email_list)} email(s) configured',
+        'email_count': len(monitor.email_notifier.email_list)
+    })
+
+@app.route('/api/get_emails', methods=['GET'])
+def get_emails():
+    """Get list of all configured emails (without passwords)"""
+    emails = [{'email': e['email'], 'name': e.get('name', 'Unknown')} 
+              for e in monitor.email_notifier.email_list]
+    return jsonify({'emails': emails, 'count': len(emails)})
 
 @app.route('/api/notifications')
 def get_notifications():
@@ -674,13 +691,14 @@ def get_notifications():
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint for monitoring"""
+    """Health check endpoint - prevents cold starts when pinged by UptimeRobot"""
     return jsonify({
         'status': 'healthy',
         'app': 'Forex Alert System v7.0',
         'running': monitor.running,
         'alerts': len(monitor.alerts),
-        'active_alerts': sum(1 for a in monitor.alerts if not a.triggered)
+        'active_alerts': sum(1 for a in monitor.alerts if not a.triggered),
+        'uptime': 'always_on'
     })
 
 if __name__ == '__main__':
@@ -691,24 +709,23 @@ if __name__ == '__main__':
         print("✅ Auto-started monitoring")
     
     print("\n" + "="*80)
-    print("💱 FOREX ALERT SYSTEM - ENHANCED TRADING EDITION v7.0")
+    print("💱 FOREX ALERT SYSTEM - FINAL PERFECT EDITION v7.0")
     print("="*80)
     print("🌐 Server starting...")
-    print("📧 Email: alimusharaf.baig@gmail.com")
+    print("📧 Multi-email support enabled")
     print("⏱️  API Updates: Every 8 minutes per pair")
     print("📊 API Limit: 800 calls/day (12data)")
-    print("⚡ INSTANT triggering - ONE BY ONE updates")
-    print("✅ NEW: CORS enabled for Render deployment")
-    print("✅ NEW: Works on both localhost & Render")
+    print("⚡ No cold starts with /health endpoint")
     print("🕐 Timezone: Pakistan Time (PKT - UTC+5)")
     print("="*80 + "\n")
     print("✅ Created by: Ali Musharaf")
     print("="*80 + "\n")
-
-# CRITICAL: Read PORT from environment for Render/Cloud deployment
+    
+    # CRITICAL: Read PORT from environment for Render/Cloud deployment
     port = int(os.environ.get('PORT', 5000))
     print(f"🌐 Starting server on http://localhost:{port}")
     print(f"🌐 Also accessible at: http://127.0.0.1:{port}")
     print("="*80 + "\n")
-
+    print("Press CTRL+C to stop\n")
+    
     app.run(debug=False, host='0.0.0.0', port=port, use_reloader=False)
