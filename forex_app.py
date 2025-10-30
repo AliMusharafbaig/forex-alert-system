@@ -86,15 +86,15 @@ FOREX_PAIRS = {
 class ForexAlert:
     pair: str
     target_price: float
-    stop_loss: float = 0.0
-    take_profit: float = 0.0
+    stop_loss_pips: int = 0  # NOW STORES PIPPETTES
+    take_profit_pips: int = 0  # NOW STORES PIPPETTES
     baseline_price: float = 0.0
     current_price: float = 0.0
     direction: str = ""
     risk_reward_ratio: str = ""
     mt5_entry: float = 0.0
-    mt5_sl: float = 0.0
-    mt5_tp: float = 0.0
+    mt5_sl: float = 0.0  # CALCULATED FROM PIPPETTES
+    mt5_tp: float = 0.0  # CALCULATED FROM PIPPETTES
     ctrader_entry_pips: float = 0.0
     ctrader_sl_pips: int = 0
     ctrader_tp_pips: int = 0
@@ -106,41 +106,120 @@ class ForexAlert:
     last_price_update: str = ""
     notes: str = ""
     
+    # BACKWARD COMPATIBILITY - Accept old field names
+    stop_loss: float = 0.0  # DEPRECATED
+    take_profit: float = 0.0  # DEPRECATED
+    
     def __post_init__(self):
+        # BACKWARD COMPATIBILITY: Convert old format to new format
+        if self.stop_loss > 0 and self.stop_loss_pips == 0:
+            # Old alert loaded - convert price to pippettes
+            self.stop_loss_pips = ForexAlert.calculate_pippettes_from_entry(
+                self.target_price, self.stop_loss, self.pair
+            )
+        
+        if self.take_profit > 0 and self.take_profit_pips == 0:
+            # Old alert loaded - convert price to pippettes
+            self.take_profit_pips = ForexAlert.calculate_pippettes_from_entry(
+                self.target_price, self.take_profit, self.pair
+            )
+        
         if not self.created_at:
             self.created_at = get_pkt_now().strftime("%Y-%m-%d %H:%M:%S")
         
+        # Determine direction FIRST
         if self.baseline_price > 0 and self.direction == "":
             if self.target_price > self.baseline_price:
-                self.direction = "up"
+                self.direction = "up"  # LONG position
             else:
-                self.direction = "down"
+                self.direction = "down"  # SHORT position
         
-        if self.target_price > 0 and self.stop_loss > 0 and self.take_profit > 0:
-            risk = abs(self.target_price - self.stop_loss)
-            reward = abs(self.take_profit - self.target_price)
+        # CRITICAL: Calculate MT5 prices based on DIRECTION
+        self.mt5_entry = self.target_price
+        
+        if self.stop_loss_pips > 0:
+            if self.direction == "up":
+                # LONG: SL is BELOW entry (subtract pips)
+                self.mt5_sl = ForexAlert.calculate_price_from_pippettes(
+                    self.target_price, self.stop_loss_pips, self.pair, subtract=True
+                )
+            else:
+                # SHORT: SL is ABOVE entry (add pips)
+                self.mt5_sl = ForexAlert.calculate_price_from_pippettes(
+                    self.target_price, self.stop_loss_pips, self.pair, subtract=False
+                )
+        
+        if self.take_profit_pips > 0:
+            if self.direction == "up":
+                # LONG: TP is ABOVE entry (add pips)
+                self.mt5_tp = ForexAlert.calculate_price_from_pippettes(
+                    self.target_price, self.take_profit_pips, self.pair, subtract=False
+                )
+            else:
+                # SHORT: TP is BELOW entry (subtract pips)
+                self.mt5_tp = ForexAlert.calculate_price_from_pippettes(
+                    self.target_price, self.take_profit_pips, self.pair, subtract=True
+                )
+        
+        # Calculate Risk:Reward ratio
+        if self.mt5_entry > 0 and self.mt5_sl > 0 and self.mt5_tp > 0:
+            risk = abs(self.mt5_entry - self.mt5_sl)
+            reward = abs(self.mt5_tp - self.mt5_entry)
             if risk > 0:
                 rr = reward / risk
                 self.risk_reward_ratio = f"1:{rr:.2f}"
             else:
                 self.risk_reward_ratio = "N/A"
         
-        self.mt5_entry = self.target_price
-        self.mt5_sl = self.stop_loss
-        self.mt5_tp = self.take_profit
-        
+        # cTrader values (same as entered)
         self.ctrader_entry_pips = self.target_price
-        self.ctrader_sl_pips = ForexAlert.calculate_pippettes_from_entry(self.target_price, self.stop_loss, self.pair)
-        self.ctrader_tp_pips = ForexAlert.calculate_pippettes_from_entry(self.target_price, self.take_profit, self.pair)
+        self.ctrader_sl_pips = self.stop_loss_pips
+        self.ctrader_tp_pips = self.take_profit_pips
+    
+    @staticmethod
+    def calculate_price_from_pippettes(entry_price: float, pippettes: int, pair: str, subtract: bool = False) -> float:
+        """
+        Convert pippettes to actual price - DIRECTION-AWARE
+        
+        Args:
+            entry_price: The target/entry price
+            pippettes: Number of pippettes (cTrader format)
+            pair: Currency pair
+            subtract: True to subtract, False to add
+        
+        Returns:
+            Calculated price point
+        """
+        # Check if pair contains JPY
+        if 'JPY' in pair.upper():
+            # JPY pairs: 1 pippette = 0.001
+            price_difference = pippettes * 0.001
+        else:
+            # Non-JPY pairs: 1 pippette = 0.00001
+            price_difference = pippettes * 0.00001
+        
+        if subtract:
+            calculated_price = entry_price - price_difference
+        else:
+            calculated_price = entry_price + price_difference
+        
+        # Round to appropriate decimal places
+        if 'JPY' in pair.upper():
+            return round(calculated_price, 3)  # JPY: 3 decimals
+        else:
+            return round(calculated_price, 5)  # Others: 5 decimals
     
     @staticmethod
     def calculate_pippettes_from_entry(entry_price, target_price, pair):
+        """Calculate pippettes from price difference - PERFECT CALCULATION"""
         diff = abs(target_price - entry_price)
         
-        if 'JPY' in pair:
-            pippettes = round(diff * 1000)
+        if 'JPY' in pair.upper():
+            # JPY pairs: divide by 0.001
+            pippettes = round(diff / 0.001)
         else:
-            pippettes = round(diff * 100000)
+            # Non-JPY pairs: divide by 0.00001
+            pippettes = round(diff / 0.00001)
         
         return pippettes
 
@@ -194,10 +273,23 @@ class EmailNotifier:
         logging.info(f"✅ Added new email: {sender_email}")
         return True
     
+    def remove_email(self, email_to_remove: str):
+        """Remove an email from the notification list"""
+        original_count = len(self.email_list)
+        self.email_list = [e for e in self.email_list if e['email'] != email_to_remove]
+        
+        if len(self.email_list) < original_count:
+            if len(self.email_list) == 0:
+                self.enabled = False
+            self.save_config()
+            logging.info(f"🗑️ Removed email: {email_to_remove}")
+            return True
+        return False
+    
     def send_alert(self, alert: ForexAlert):
         """Send alert to ALL configured emails"""
         if not self.enabled or not self.email_list:
-            logging.warning("Email not sent - no emails configured")
+            logging.warning("⚠️ Email not sent - no emails configured")
             return False
         
         success_count = 0
@@ -207,6 +299,8 @@ class EmailNotifier:
                 sender_email = email_config['email']
                 sender_password = email_config['password']
                 sender_name = email_config.get('name', 'Trader')
+                
+                logging.info(f"📧 Attempting to send email to: {sender_email}")
                 
                 subject = f"🚨💰 FOREX ALERT: {alert.pair} Target Reached!"
                 
@@ -223,18 +317,18 @@ Hi {sender_name},
 Forex Pair:       {alert.pair}
 Direction:        {alert.direction.upper()} {('📈' if alert.direction == 'up' else '📉')}
 
-💼 METATRADER 5 (MT5) PRICES:
+💼 METATRADER 5 (MT5) EXACT PRICES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Entry Price:      {alert.mt5_entry:.5f}
+Entry Price:      {alert.mt5_entry:.5f} 🎯
 Stop Loss:        {alert.mt5_sl:.5f} 🛡️
-Take Profit:      {alert.mt5_tp:.5f} 🎯
+Take Profit:      {alert.mt5_tp:.5f} 💰
 Current Price:    {alert.current_price:.5f} ✅
 
-📊 cTRADER PIPPETTES:
+📊 cTRADER PIPPETTES (Input Values):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Entry (Decimal):   {alert.ctrader_entry_pips:.5f}
 Stop Loss:         {alert.ctrader_sl_pips} pippettes 🛡️
-Take Profit:       {alert.ctrader_tp_pips} pippettes 🎯
+Take Profit:       {alert.ctrader_tp_pips} pippettes 💰
 
 ⚖️ RISK MANAGEMENT:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -244,9 +338,11 @@ Time Triggered:    {get_pkt_now().strftime("%Y-%m-%d %H:%M:%S")} PKT
 {('📝 Notes: ' + alert.notes if alert.notes else '')}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 COPY MT5 PRICES DIRECTLY TO YOUR PLATFORM!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Best regards,
-Forex Alert System v7.1 - DUAL API EDITION
+Forex Alert System v7.1 - Smart Pippette Edition
 Created by Ali Musharaf
                 """
                 
@@ -256,18 +352,34 @@ Created by Ali Musharaf
                 message['Subject'] = subject
                 message.attach(MIMEText(body, 'plain'))
                 
-                with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
+                logging.info(f"📤 Connecting to Gmail SMTP server...")
+                with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+                    server.set_debuglevel(1)  # Enable debug output
+                    logging.info(f"🔐 Starting TLS...")
                     server.starttls()
+                    logging.info(f"🔑 Logging in as {sender_email}...")
                     server.login(sender_email, sender_password)
+                    logging.info(f"📧 Sending email...")
                     server.send_message(message)
                 
                 success_count += 1
-                logging.info(f"✅ Email sent to {sender_email}")
+                logging.info(f"✅ EMAIL SENT SUCCESSFULLY to {sender_email}")
                 
+            except smtplib.SMTPAuthenticationError as e:
+                logging.error(f"❌ AUTHENTICATION FAILED for {sender_email}: {e}")
+                logging.error(f"   Check: 1) App Password correct? 2) 2-Step Verification enabled?")
+            except smtplib.SMTPException as e:
+                logging.error(f"❌ SMTP ERROR for {sender_email}: {e}")
             except Exception as e:
-                logging.error(f"❌ Failed to send to {email_config.get('email', 'unknown')}: {e}")
+                logging.error(f"❌ GENERAL ERROR sending to {email_config.get('email', 'unknown')}: {e}")
+                logging.error(f"   Error type: {type(e).__name__}")
         
-        return success_count > 0
+        if success_count > 0:
+            logging.info(f"✅ Total emails sent successfully: {success_count}/{len(self.email_list)}")
+            return True
+        else:
+            logging.error(f"❌ NO EMAILS SENT! All {len(self.email_list)} attempt(s) failed")
+            return False
 
 class ForexPriceMonitor:
     def __init__(self):
@@ -454,7 +566,20 @@ class ForexPriceMonitor:
             return None
     
     def fetch_initial_price(self, pair: str) -> Optional[float]:
-        logging.info(f"🔍 Fetching initial baseline price for {pair}...")
+        """Fetch baseline price - NOW WITH INSTANT CACHE"""
+        logging.info(f"🔍 Fetching baseline price for {pair}...")
+        
+        # Try to get cached recent price first (within last 10 minutes)
+        if pair in self.last_api_call:
+            time_since_last = (get_pkt_now() - self.last_api_call[pair]).total_seconds()
+            if time_since_last < 600:  # Less than 10 minutes
+                # Find current price from existing alerts
+                for alert in self.alerts:
+                    if alert.pair == pair and alert.current_price > 0:
+                        logging.info(f"⚡ INSTANT: Using cached price for {pair} = {alert.current_price:.5f}")
+                        return alert.current_price
+        
+        # Otherwise fetch new price
         price = self.get_price_twelvedata(pair)
         
         if price:
@@ -564,8 +689,8 @@ class ForexPriceMonitor:
         
         return False
     
-    def add_alert(self, pair: str, target_price: float, stop_loss: float = 0.0, 
-                  take_profit: float = 0.0, notes: str = "") -> Optional[ForexAlert]:
+    def add_alert(self, pair: str, target_price: float, stop_loss_pips: int = 0, 
+                  take_profit_pips: int = 0, notes: str = "") -> Optional[ForexAlert]:
         if pair not in FOREX_PAIRS:
             return None
         
@@ -578,8 +703,8 @@ class ForexPriceMonitor:
         alert = ForexAlert(
             pair=pair,
             target_price=target_price,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
+            stop_loss_pips=stop_loss_pips,  # NOW PIPPETTES
+            take_profit_pips=take_profit_pips,  # NOW PIPPETTES
             baseline_price=baseline_price,
             current_price=baseline_price,
             notes=notes
@@ -591,6 +716,10 @@ class ForexPriceMonitor:
         self.save_alerts()
         
         logging.info(f"✅ Alert added: {alert.pair}")
+        logging.info(f"   Target: {alert.target_price:.5f}")
+        logging.info(f"   SL Pips: {alert.stop_loss_pips} → MT5 Price: {alert.mt5_sl:.5f}")
+        logging.info(f"   TP Pips: {alert.take_profit_pips} → MT5 Price: {alert.mt5_tp:.5f}")
+        logging.info(f"   R:R: {alert.risk_reward_ratio}")
         
         if not self.running and len(self.alerts) > 0:
             self.start_monitoring()
@@ -691,21 +820,68 @@ class ForexPriceMonitor:
         return True
     
     def save_alerts(self):
+        """Save alerts with AUTOMATIC BACKUP"""
         try:
+            # Save main file
             with open(self.alerts_file, 'w') as f:
                 json.dump([asdict(alert) for alert in self.alerts], f, indent=4)
+            
+            # CRITICAL: Create backup file
+            backup_file = self.alerts_file.replace('.json', '_BACKUP.json')
+            with open(backup_file, 'w') as f:
+                json.dump([asdict(alert) for alert in self.alerts], f, indent=4)
+            
+            # CRITICAL: Create timestamped backup
+            timestamp = get_pkt_now().strftime("%Y%m%d")
+            daily_backup = f"forex_alerts_backup_{timestamp}.json"
+            with open(daily_backup, 'w') as f:
+                json.dump([asdict(alert) for alert in self.alerts], f, indent=4)
+                
         except Exception as e:
             logging.error(f"Error saving alerts: {e}")
     
     def load_alerts(self):
+        """Load alerts with AUTOMATIC RECOVERY"""
         try:
+            # Try main file first
             if os.path.exists(self.alerts_file):
                 with open(self.alerts_file, 'r') as f:
                     data = json.load(f)
                     self.alerts = [ForexAlert(**item) for item in data]
-                    logging.info(f"📂 Loaded {len(self.alerts)} alerts")
+                    logging.info(f"📂 Loaded {len(self.alerts)} alerts from main file")
+                    return
         except Exception as e:
-            logging.error(f"Error loading alerts: {e}")
+            logging.error(f"⚠️ Error loading main file: {e}")
+        
+        # Try backup file
+        try:
+            backup_file = self.alerts_file.replace('.json', '_BACKUP.json')
+            if os.path.exists(backup_file):
+                with open(backup_file, 'r') as f:
+                    data = json.load(f)
+                    self.alerts = [ForexAlert(**item) for item in data]
+                    logging.info(f"📂 RECOVERED {len(self.alerts)} alerts from BACKUP!")
+                    # Restore main file
+                    self.save_alerts()
+                    return
+        except Exception as e:
+            logging.error(f"⚠️ Error loading backup: {e}")
+        
+        # Try daily backup
+        try:
+            timestamp = get_pkt_now().strftime("%Y%m%d")
+            daily_backup = f"forex_alerts_backup_{timestamp}.json"
+            if os.path.exists(daily_backup):
+                with open(daily_backup, 'r') as f:
+                    data = json.load(f)
+                    self.alerts = [ForexAlert(**item) for item in data]
+                    logging.info(f"📂 RECOVERED {len(self.alerts)} alerts from DAILY BACKUP!")
+                    self.save_alerts()
+                    return
+        except Exception as e:
+            logging.error(f"⚠️ Error loading daily backup: {e}")
+        
+        logging.warning("⚠️ No alerts found in any backup files")
 
 monitor = ForexPriceMonitor()
 
@@ -727,14 +903,14 @@ def get_alerts():
             'pair': alert.pair,
             'baseline_price': alert.baseline_price,
             'target_price': alert.target_price,
-            'stop_loss': alert.stop_loss,
-            'take_profit': alert.take_profit,
+            'stop_loss_pips': alert.stop_loss_pips,  # PIPPETTES
+            'take_profit_pips': alert.take_profit_pips,  # PIPPETTES
             'current_price': alert.current_price,
             'direction': alert.direction,
             'risk_reward_ratio': alert.risk_reward_ratio,
             'mt5_entry': alert.mt5_entry,
-            'mt5_sl': alert.mt5_sl,
-            'mt5_tp': alert.mt5_tp,
+            'mt5_sl': alert.mt5_sl,  # CALCULATED PRICE
+            'mt5_tp': alert.mt5_tp,  # CALCULATED PRICE
             'ctrader_entry_pips': alert.ctrader_entry_pips,
             'ctrader_sl_pips': alert.ctrader_sl_pips,
             'ctrader_tp_pips': alert.ctrader_tp_pips,
@@ -748,26 +924,61 @@ def get_alerts():
 
 @app.route('/api/add_alert', methods=['POST'])
 def add_alert():
-    data = request.json
-    alert = monitor.add_alert(
-        data['pair'],
-        float(data['target_price']),
-        float(data.get('stop_loss', 0)),
-        float(data.get('take_profit', 0)),
-        data.get('notes', '')
-    )
-    if alert:
-        return jsonify({
-            'success': True,
-            'message': 'Alert added! Monitoring started!',
-            'baseline_price': alert.baseline_price,
-            'direction': alert.direction,
-            'risk_reward_ratio': alert.risk_reward_ratio,
-            'ctrader_entry_pips': alert.ctrader_entry_pips,
-            'ctrader_sl_pips': alert.ctrader_sl_pips,
-            'ctrader_tp_pips': alert.ctrader_tp_pips
-        })
-    return jsonify({'success': False, 'message': 'Failed to fetch baseline price'}), 400
+    try:
+        data = request.json
+        logging.info(f"📥 Received alert request: {data}")
+        
+        pair = data.get('pair')
+        target_price = data.get('target_price')
+        stop_loss_pips = data.get('stop_loss_pips')
+        take_profit_pips = data.get('take_profit_pips')
+        notes = data.get('notes', '')
+        
+        # Validate inputs
+        if not pair:
+            return jsonify({'success': False, 'message': 'Pair is required'}), 400
+        
+        if not target_price:
+            return jsonify({'success': False, 'message': 'Target price is required'}), 400
+        
+        # Convert to proper types
+        try:
+            target_price = float(target_price)
+            stop_loss_pips = int(stop_loss_pips) if stop_loss_pips else 0
+            take_profit_pips = int(take_profit_pips) if take_profit_pips else 0
+        except (ValueError, TypeError) as e:
+            logging.error(f"❌ Conversion error: {e}")
+            return jsonify({'success': False, 'message': f'Invalid number format: {e}'}), 400
+        
+        logging.info(f"✅ Validated: {pair} @ {target_price}, SL: {stop_loss_pips}, TP: {take_profit_pips}")
+        
+        # Add alert
+        alert = monitor.add_alert(pair, target_price, stop_loss_pips, take_profit_pips, notes)
+        
+        if alert:
+            logging.info(f"✅ Alert created successfully")
+            return jsonify({
+                'success': True,
+                'message': 'Alert added! MT5 prices calculated from pippettes!',
+                'baseline_price': alert.baseline_price,
+                'direction': alert.direction,
+                'risk_reward_ratio': alert.risk_reward_ratio,
+                'mt5_entry': alert.mt5_entry,
+                'mt5_sl': alert.mt5_sl,
+                'mt5_tp': alert.mt5_tp,
+                'ctrader_entry_pips': alert.ctrader_entry_pips,
+                'ctrader_sl_pips': alert.ctrader_sl_pips,
+                'ctrader_tp_pips': alert.ctrader_tp_pips
+            })
+        else:
+            logging.error(f"❌ Alert creation returned None")
+            return jsonify({'success': False, 'message': 'Failed to fetch baseline price - API error'}), 400
+            
+    except Exception as e:
+        logging.error(f"❌ EXCEPTION in add_alert: {type(e).__name__}: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
+        return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/remove_alert/<int:index>', methods=['DELETE'])
 def remove_alert(index):
@@ -839,6 +1050,19 @@ def configure_email():
         'message': f'Email added! Total: {len(monitor.email_notifier.email_list)} email(s) configured',
         'email_count': len(monitor.email_notifier.email_list)
     })
+
+@app.route('/api/remove_email', methods=['POST'])
+def remove_email():
+    """Remove an email from the notification list"""
+    data = request.json
+    email_to_remove = data.get('email')
+    if monitor.email_notifier.remove_email(email_to_remove):
+        return jsonify({
+            'success': True,
+            'message': f'Email removed! Remaining: {len(monitor.email_notifier.email_list)} email(s)',
+            'email_count': len(monitor.email_notifier.email_list)
+        })
+    return jsonify({'success': False, 'message': 'Email not found'}), 400
 
 @app.route('/api/get_emails', methods=['GET'])
 def get_emails():
