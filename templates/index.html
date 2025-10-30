@@ -583,19 +583,21 @@
 
         <div class="main-grid">
             <div class="card">
-                <div class="card-header">➕ Add New Alert with SL/TP</div>
+                <div class="card-header">➕ Add New Alert with SL/TP Pippettes</div>
                 <div class="info-box">
-                    <strong>🎯 DUAL API ENHANCED Features:</strong>
+                    <strong>🎯 SMART PIPPETTE INPUT SYSTEM:</strong>
                     <ul style="margin-left: 20px; margin-top: 10px;">
-                        <li>✅ 1600 API calls/day (Primary 800 + Secondary 800)</li>
-                        <li>✅ SMART ERROR-BASED instant fallback</li>
-                        <li>✅ Detects API errors in real-time & switches automatically</li>
-                        <li>✅ API resets at 5:00 AM PKT (TwelveData refresh time)</li>
-                        <li>✅ 6-minute updates per pair (improved from 8min)</li>
-                        <li>✅ Perfect smooth countdown timer</li>
-                        <li>✅ Auto-calculates R:R, SL/TP, cTrader pippettes</li>
-                        <li>✅ Multi-user email support</li>
+                        <li>✅ Enter Target Price (where you want alert)</li>
+                        <li>✅ Enter SL/TP in PIPPETTES (cTrader format)</li>
+                        <li>✅ System AUTO-CALCULATES exact MT5 prices</li>
+                        <li>✅ Copy MT5 prices directly to your platform!</li>
+                        <li>✅ No manual calculation needed!</li>
                     </ul>
+                    <div style="margin-top: 10px; padding: 10px; background: rgba(255, 153, 0, 0.2); border-radius: 5px;">
+                        <strong style="color: #ffaa00;">💡 Example:</strong><br>
+                        Target: 1.09500 | SL: 200 pips | TP: 300 pips<br>
+                        → MT5 SL: 1.09300 | MT5 TP: 1.09800 (auto-calculated!)
+                    </div>
                 </div>
                 <form id="alertForm">
                     <div class="form-group">
@@ -609,19 +611,25 @@
                         <input type="number" id="targetPrice" step="0.00001" placeholder="e.g., 1.09500" required>
                     </div>
                     <div class="form-group">
-                        <label>🛡️ Stop Loss Price</label>
-                        <input type="number" id="stopLoss" step="0.00001" placeholder="e.g., 1.09300" required>
+                        <label>🛡️ Stop Loss (Pippettes - cTrader format)</label>
+                        <input type="number" id="stopLossPips" step="1" placeholder="e.g., 200 (pippettes)" required>
+                        <small style="color: #999; display: block; margin-top: 5px;">
+                            For EUR/USD: 200 pips = 0.00200 | For USD/JPY: 200 pips = 0.200
+                        </small>
                     </div>
                     <div class="form-group">
-                        <label>💰 Take Profit Price</label>
-                        <input type="number" id="takeProfit" step="0.00001" placeholder="e.g., 1.09800" required>
+                        <label>💰 Take Profit (Pippettes - cTrader format)</label>
+                        <input type="number" id="takeProfitPips" step="1" placeholder="e.g., 300 (pippettes)" required>
+                        <small style="color: #999; display: block; margin-top: 5px;">
+                            System will calculate exact MT5 prices automatically!
+                        </small>
                     </div>
                     <div class="form-group">
                         <label>📝 Notes (Optional)</label>
                         <textarea id="notesInput" rows="3" placeholder="e.g., Long entry at support"></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary" style="width: 100%;">
-                        🔔 Add Alert (Auto-Calculates Everything!)
+                        🔔 Add Alert (Auto-Calculates MT5 Prices!)
                     </button>
                 </form>
                 <div style="margin-top: 20px; text-align: center;">
@@ -653,13 +661,25 @@
                             <span class="popup-price-label">Entry:</span>
                             <span class="popup-price-value" id="popupMT5Entry">--</span>
                         </div>
-                        <div class="popup-price">
-                            <span class="popup-price-label">Stop Loss:</span>
-                            <span class="popup-price-value" id="popupMT5SL" style="color: #ff6666;">--</span>
+                        <div class="popup-price" style="border: none; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; justify-content: space-between; width: 100%; padding-bottom: 8px; border-bottom: 1px solid #444;">
+                                <span class="popup-price-label">Stop Loss:</span>
+                                <span class="popup-price-value" id="popupMT5SL" style="color: #ff6666;">--</span>
+                            </div>
+                            <button class="btn btn-primary" onclick="copyFromPopup('popupMT5SL')" 
+                                    style="width: 100%; padding: 6px; font-size: 0.85em; background: linear-gradient(135deg, #ff6666, #cc0000);">
+                                📋 Copy SL
+                            </button>
                         </div>
-                        <div class="popup-price">
-                            <span class="popup-price-label">Take Profit:</span>
-                            <span class="popup-price-value" id="popupMT5TP" style="color: #00ff88;">--</span>
+                        <div class="popup-price" style="border: none; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; justify-content: space-between; width: 100%; padding-bottom: 8px; border-bottom: 1px solid #444;">
+                                <span class="popup-price-label">Take Profit:</span>
+                                <span class="popup-price-value" id="popupMT5TP" style="color: #00ff88;">--</span>
+                            </div>
+                            <button class="btn btn-primary" onclick="copyFromPopup('popupMT5TP')" 
+                                    style="width: 100%; padding: 6px; font-size: 0.85em; background: linear-gradient(135deg, #00ff88, #00cc44);">
+                                📋 Copy TP
+                            </button>
                         </div>
                     </div>
                     <div class="popup-section popup-ctrader">
@@ -668,13 +688,25 @@
                             <span class="popup-price-label">Entry:</span>
                             <span class="popup-price-value" id="popupCTEntry">--</span>
                         </div>
-                        <div class="popup-price">
-                            <span class="popup-price-label">Stop Loss:</span>
-                            <span class="popup-price-value" id="popupCTSL" style="color: #ff6666;">--</span>
+                        <div class="popup-price" style="border: none; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; justify-content: space-between; width: 100%; padding-bottom: 8px; border-bottom: 1px solid #444;">
+                                <span class="popup-price-label">Stop Loss:</span>
+                                <span class="popup-price-value" id="popupCTSL" style="color: #ff6666;">--</span>
+                            </div>
+                            <button class="btn btn-primary" onclick="copyFromPopup('popupCTSL')" 
+                                    style="width: 100%; padding: 6px; font-size: 0.85em; background: linear-gradient(135deg, #ff6666, #cc0000);">
+                                📋 Copy SL Pips
+                            </button>
                         </div>
-                        <div class="popup-price">
-                            <span class="popup-price-label">Take Profit:</span>
-                            <span class="popup-price-value" id="popupCTTP" style="color: #00ff88;">--</span>
+                        <div class="popup-price" style="border: none; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; justify-content: space-between; width: 100%; padding-bottom: 8px; border-bottom: 1px solid #444;">
+                                <span class="popup-price-label">Take Profit:</span>
+                                <span class="popup-price-value" id="popupCTTP" style="color: #00ff88;">--</span>
+                            </div>
+                            <button class="btn btn-primary" onclick="copyFromPopup('popupCTTP')" 
+                                    style="width: 100%; padding: 6px; font-size: 0.85em; background: linear-gradient(135deg, #00ff88, #00cc44);">
+                                📋 Copy TP Pips
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -906,7 +938,10 @@
                                 <div class="email-address">📧 ${email.email}</div>
                                 <div class="email-name">👤 ${email.name || 'Trader'}</div>
                             </div>
-                            <div style="color: #00ff88; font-weight: bold;">✓ Active</div>
+                            <button class="btn btn-primary" onclick="removeEmail('${email.email}')" 
+                                    style="background: linear-gradient(135deg, #cc0000, #990000); padding: 5px 15px; font-size: 0.85em;">
+                                🗑️ Remove
+                            </button>
                         </div>
                     `).join('');
                 }
@@ -914,6 +949,69 @@
             } catch (error) {
                 console.error('Error loading email list:', error);
             }
+        }
+
+        async function removeEmail(email) {
+            if (!confirm(`Remove ${email} from notifications?`)) return;
+            try {
+                const response = await fetch('/api/remove_email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showNotification(`✅ ${result.message}`, 'success');
+                    loadEmailList();
+                    updateEmailStatus();
+                } else {
+                    showNotification('❌ ' + result.message, 'error');
+                }
+            } catch (error) {
+                showNotification('❌ Error removing email', 'error');
+            }
+        }
+
+        function copyToClipboard(elementId, value) {
+            // Method 1: Use Clipboard API (modern browsers)
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(value).then(() => {
+                    showNotification(`✅ Copied: ${value}`, 'success');
+                }).catch(err => {
+                    // Fallback to Method 2
+                    fallbackCopy(value);
+                });
+            } else {
+                // Method 2: Fallback for older browsers
+                fallbackCopy(value);
+            }
+        }
+
+        function fallbackCopy(value) {
+            const tempInput = document.createElement('input');
+            tempInput.value = value;
+            tempInput.style.position = 'fixed';
+            tempInput.style.opacity = '0';
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            tempInput.setSelectionRange(0, 99999); // For mobile
+            
+            try {
+                document.execCommand('copy');
+                showNotification(`✅ Copied: ${value}`, 'success');
+            } catch (err) {
+                showNotification('❌ Failed to copy. Please copy manually.', 'error');
+            }
+            
+            document.body.removeChild(tempInput);
+        }
+
+        function copyFromPopup(elementId) {
+            const element = document.getElementById(elementId);
+            const value = element.textContent.trim();
+            // Remove any extra text like " pippettes"
+            const cleanValue = value.replace(' pippettes', '').replace(' pips', '').trim();
+            copyToClipboard(elementId, cleanValue);
         }
 
         async function updateEmailStatus() {
@@ -1001,33 +1099,57 @@
                             </div>
                             <div class="trading-sections">
                                 <div class="trading-section mt5-section">
-                                    <div class="section-title" style="color: #00aaff;">📊 MetaTrader 5 (MT5)</div>
+                                    <div class="section-title" style="color: #00aaff;">📊 MetaTrader 5 (MT5) - COPY THESE!</div>
                                     <div class="price-row">
                                         <span class="price-label">Entry Price:</span>
-                                        <span class="price-value">${alert.mt5_entry.toFixed(5)}</span>
+                                        <span class="price-value" style="font-size: 1.1em;">${alert.mt5_entry.toFixed(5)}</span>
                                     </div>
-                                    <div class="price-row">
-                                        <span class="price-label">Stop Loss:</span>
-                                        <span class="price-value" style="color: #ff6666;">${alert.mt5_sl.toFixed(5)}</span>
+                                    <div class="price-row" style="border: none; flex-direction: column; align-items: flex-start; gap: 8px;">
+                                        <div style="display: flex; justify-content: space-between; width: 100%; padding-bottom: 8px; border-bottom: 1px solid #333;">
+                                            <span class="price-label">Stop Loss:</span>
+                                            <span class="price-value" style="color: #ff6666; font-size: 1.1em;" id="mt5-sl-${idx}">${alert.mt5_sl.toFixed(5)}</span>
+                                        </div>
+                                        <button class="btn btn-primary" onclick="copyToClipboard('mt5-sl-${idx}', '${alert.mt5_sl.toFixed(5)}')" 
+                                                style="width: 100%; padding: 6px; font-size: 0.85em; background: linear-gradient(135deg, #ff6666, #cc0000);">
+                                            📋 Copy SL Price
+                                        </button>
                                     </div>
-                                    <div class="price-row">
-                                        <span class="price-label">Take Profit:</span>
-                                        <span class="price-value" style="color: #00ff88;">${alert.mt5_tp.toFixed(5)}</span>
+                                    <div class="price-row" style="border: none; flex-direction: column; align-items: flex-start; gap: 8px;">
+                                        <div style="display: flex; justify-content: space-between; width: 100%; padding-bottom: 8px; border-bottom: 1px solid #333;">
+                                            <span class="price-label">Take Profit:</span>
+                                            <span class="price-value" style="color: #00ff88; font-size: 1.1em;" id="mt5-tp-${idx}">${alert.mt5_tp.toFixed(5)}</span>
+                                        </div>
+                                        <button class="btn btn-primary" onclick="copyToClipboard('mt5-tp-${idx}', '${alert.mt5_tp.toFixed(5)}')" 
+                                                style="width: 100%; padding: 6px; font-size: 0.85em; background: linear-gradient(135deg, #00ff88, #00cc44);">
+                                            📋 Copy TP Price
+                                        </button>
                                     </div>
                                 </div>
                                 <div class="trading-section ctrader-section">
-                                    <div class="section-title" style="color: #00ff88;">📈 cTrader (Pippettes)</div>
+                                    <div class="section-title" style="color: #00ff88;">📈 cTrader (Input Values)</div>
                                     <div class="price-row">
                                         <span class="price-label">Entry Price:</span>
                                         <span class="price-value">${typeof alert.ctrader_entry_pips === 'number' ? alert.ctrader_entry_pips.toFixed(5) : alert.ctrader_entry_pips}</span>
                                     </div>
-                                    <div class="price-row">
-                                        <span class="price-label">Stop Loss:</span>
-                                        <span class="price-value" style="color: #ff6666;">${alert.ctrader_sl_pips} pippettes</span>
+                                    <div class="price-row" style="border: none; flex-direction: column; align-items: flex-start; gap: 8px;">
+                                        <div style="display: flex; justify-content: space-between; width: 100%; padding-bottom: 8px; border-bottom: 1px solid #333;">
+                                            <span class="price-label">Stop Loss:</span>
+                                            <span class="price-value" style="color: #ff6666;" id="ct-sl-${idx}">${alert.ctrader_sl_pips} pippettes</span>
+                                        </div>
+                                        <button class="btn btn-primary" onclick="copyToClipboard('ct-sl-${idx}', '${alert.ctrader_sl_pips}')" 
+                                                style="width: 100%; padding: 6px; font-size: 0.85em; background: linear-gradient(135deg, #ff6666, #cc0000);">
+                                            📋 Copy SL Pips
+                                        </button>
                                     </div>
-                                    <div class="price-row">
-                                        <span class="price-label">Take Profit:</span>
-                                        <span class="price-value" style="color: #00ff88;">${alert.ctrader_tp_pips} pippettes</span>
+                                    <div class="price-row" style="border: none; flex-direction: column; align-items: flex-start; gap: 8px;">
+                                        <div style="display: flex; justify-content: space-between; width: 100%; padding-bottom: 8px; border-bottom: 1px solid #333;">
+                                            <span class="price-label">Take Profit:</span>
+                                            <span class="price-value" style="color: #00ff88;" id="ct-tp-${idx}">${alert.ctrader_tp_pips} pippettes</span>
+                                        </div>
+                                        <button class="btn btn-primary" onclick="copyToClipboard('ct-tp-${idx}', '${alert.ctrader_tp_pips}')" 
+                                                style="width: 100%; padding: 6px; font-size: 0.85em; background: linear-gradient(135deg, #00ff88, #00cc44);">
+                                            📋 Copy TP Pips
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -1109,31 +1231,61 @@
 
         document.getElementById('alertForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            showNotification('⏳ Adding alert and calculating values...', 'success');
+            
+            // Show instant feedback
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '⏳ Adding Alert...';
+            submitBtn.disabled = true;
+            
             const data = {
                 pair: document.getElementById('pairSelect').value,
                 target_price: document.getElementById('targetPrice').value,
-                stop_loss: document.getElementById('stopLoss').value,
-                take_profit: document.getElementById('takeProfit').value,
+                stop_loss_pips: document.getElementById('stopLossPips').value,
+                take_profit_pips: document.getElementById('takeProfitPips').value,
                 notes: document.getElementById('notesInput').value
             };
+            
+            console.log('📤 Sending data:', data);
+            
             try {
                 const response = await fetch('/api/add_alert', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
+                
+                console.log('📥 Response status:', response.status);
+                
                 const result = await response.json();
+                console.log('📥 Response data:', result);
+                
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                
                 if (result.success) {
-                    showNotification(`✅ ${result.message}`, 'success');
+                    showNotification(
+                        `✅ Alert Added Instantly!\n\n` +
+                        `📊 MT5 PRICES (Ready to Copy!):\n` +
+                        `Entry: ${result.mt5_entry.toFixed(5)}\n` +
+                        `SL: ${result.mt5_sl.toFixed(5)}\n` +
+                        `TP: ${result.mt5_tp.toFixed(5)}\n\n` +
+                        `Direction: ${result.direction.toUpperCase()}\n` +
+                        `R:R: ${result.risk_reward_ratio}`,
+                        'success'
+                    );
                     document.getElementById('alertForm').reset();
                     loadAlerts();
                     loadStatus();
                 } else {
-                    showNotification('❌ ' + result.message, 'error');
+                    console.error('❌ Server returned error:', result.message);
+                    showNotification('❌ Error: ' + result.message, 'error');
                 }
             } catch (error) {
-                showNotification('❌ Error adding alert', 'error');
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+                console.error('❌ Exception:', error);
+                showNotification('❌ Network error: ' + error.message + '\n\nCheck browser console for details.', 'error');
             }
         });
 
@@ -1234,12 +1386,13 @@
         }
 
         console.log('%c🚀 Forex Alert System v7.1 - DUAL API EDITION', 'color: #ff4444; font-size: 18px; font-weight: bold;');
-        console.log('%c⚡ DUAL API SYSTEM ACTIVE', 'color: #00aaff; font-size: 16px; font-weight: bold;');
+        console.log('%c⚡ SMART ERROR-BASED DUAL API SYSTEM', 'color: #00aaff; font-size: 16px; font-weight: bold;');
         console.log('%c   Primary API: 800 calls/day', 'color: #00ff88; font-weight: bold;');
         console.log('%c   Secondary API: 800 calls/day', 'color: #ff9900; font-weight: bold;');
         console.log('%c   Total: 1600 API calls/day', 'color: #ffaa00; font-weight: bold;');
+        console.log('%c🌅 API Reset: 5:00 AM PKT (TwelveData refresh)', 'color: #ffaa00; font-weight: bold;');
         console.log('%c⏱️  Update Interval: 6 minutes per pair', 'color: #00ff88; font-weight: bold;');
-        console.log('%c✅ Instant automatic fallback enabled', 'color: #00ff88; font-weight: bold;');
+        console.log('%c✅ Real-time error detection & instant fallback', 'color: #00ff88; font-weight: bold;');
         console.log('%c✅ Perfect smooth countdown timer', 'color: #00ff88; font-weight: bold;');
         console.log('%c✅ Multi-email support enabled', 'color: #00ff88; font-weight: bold;');
         console.log('%c👨‍💻 Created by Ali Musharaf', 'color: #4444ff; font-weight: bold;');
